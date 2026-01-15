@@ -18,6 +18,13 @@ RUN make
 #######
 FROM postgres:${PGVERSION}
 
+# Install gosu for running commands as stolon user (required by K8s manifests)
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends gosu; \
+    rm -rf /var/lib/apt/lists/*; \
+    gosu nobody true
+
 RUN useradd -ms /bin/bash stolon
 
 EXPOSE 5432
