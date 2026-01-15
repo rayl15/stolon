@@ -1,0 +1,143 @@
+###############################################################################
+# pgBackRest Configuration for Stolon
+# For 500GB+ PostgreSQL databases with incremental backups
+###############################################################################
+
+---
+# ConfigMap for pgBackRest configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbackrest-config
+data:
+  pgbackrest.conf: |
+    [global]
+    # Repository configuration (S3 example - adjust for GCS/Azure)
+    repo1-type=s3
+    repo1-s3-endpoint=s3.amazonaws.com
+    repo1-s3-bucket=your-backup-bucket
+    repo1-s3-region=us-east-1
+    repo1-path=/stolon-backups
+
+    # Retention policy
+    repo1-retention-full=4
+    repo1-retention-diff=7
+
+    # Compression (reduces 500GB to ~150GB)
+    compress-type=zst
+    compress-level=3
+
+    # Parallel processing for faster backups
+    process-max=4
+
+    # Logging
+    log-level-console=info
+    log-level-file=detail
+
+    [stolon]
+    # PostgreSQL connection
+    pg1-path=/stolon-data/postgres
+    pg1-socket-path=/tmp
+    pg1-user=stolon
+
+---
+# Secret for S3/cloud credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgbackrest-secrets
+type: Opaque
+stringData:
+  # For AWS S3
+  AWS_ACCESS_KEY_ID: "your-access-key"
+  AWS_SECRET_ACCESS_KEY: "your-secret-key"
+  # For GCS (use service account JSON)
+  # GOOGLE_APPLICATION_CREDENTIALS: "/path/to/service-account.json"
+
+---
+# CronJob for daily incremental backups
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pgbackrest-backup-incr
+spec:
+  # Daily at 2 AM
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pgbackrest-backup
+              image: sourcefuse/stolon:v0.18.0-pg18-backup
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  echo "Starting incremental backup..."
+                  pgbackrest --stanza=stolon backup --type=incr
+                  echo "Backup completed at $(date)"
+                  pgbackrest --stanza=stolon info
+              envFrom:
+                - secretRef:
+                    name: pgbackrest-secrets
+              volumeMounts:
+                - name: pgbackrest-config
+                  mountPath: /etc/pgbackrest/pgbackrest.conf
+                  subPath: pgbackrest.conf
+                - name: stolon-data
+                  mountPath: /stolon-data
+                  readOnly: true
+          volumes:
+            - name: pgbackrest-config
+              configMap:
+                name: pgbackrest-config
+            - name: stolon-data
+              persistentVolumeClaim:
+                claimName: data-stolon-keeper-0
+
+---
+# CronJob for weekly full backups
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pgbackrest-backup-full
+spec:
+  # Weekly on Sunday at 1 AM
+  schedule: "0 1 * * 0"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pgbackrest-backup
+              image: sourcefuse/stolon:v0.18.0-pg18-backup
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  echo "Starting full backup..."
+                  pgbackrest --stanza=stolon backup --type=full
+                  echo "Full backup completed at $(date)"
+                  pgbackrest --stanza=stolon info
+              envFrom:
+                - secretRef:
+                    name: pgbackrest-secrets
+              volumeMounts:
+                - name: pgbackrest-config
+                  mountPath: /etc/pgbackrest/pgbackrest.conf
+                  subPath: pgbackrest.conf
+                - name: stolon-data
+                  mountPath: /stolon-data
+                  readOnly: true
+          volumes:
+            - name: pgbackrest-config
+              configMap:
+                name: pgbackrest-config
+            - name: stolon-data
+              persistentVolumeClaim:
+                claimName: data-stolon-keeper-0

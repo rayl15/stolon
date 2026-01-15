@@ -1,5 +1,4 @@
 ARG PGVERSION=0
-ARG ARCHITECTURE=amd64
 ARG GOSU_VERSION=1.17
 
 #######
@@ -20,26 +19,34 @@ RUN make
 FROM golang:1.24-bookworm AS gosu-builder
 
 ARG GOSU_VERSION
-ARG ARCHITECTURE
 
 RUN set -eux; \
     go install -ldflags='-s -w' github.com/tianon/gosu@${GOSU_VERSION}; \
     gosu nobody true
 
 #######
-####### Build the final image (Alpine for minimal CVEs)
+####### Build the final image (Debian for pgBackRest support)
 #######
-FROM postgres:${PGVERSION}-alpine
+FROM postgres:${PGVERSION}
 
-# Install su-exec (Alpine's gosu equivalent) and create stolon user
-RUN apk add --no-cache su-exec && \
-    adduser -D -s /bin/sh stolon
+# Install pgBackRest for 500GB+ incremental backups
+# - Incremental/differential backups (only changed blocks)
+# - Parallel backup and restore
+# - Native S3/GCS/Azure support
+# - Point-in-time recovery (PITR)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends pgbackrest && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create stolon user
+RUN useradd -ms /bin/bash stolon
 
 EXPOSE 5432
 
 # Copy gosu built with latest Go (no stdlib vulnerabilities)
 COPY --from=gosu-builder /go/bin/gosu /usr/local/bin/gosu
 
+# Copy stolon binaries
 COPY --from=builder /stolon/bin/ /usr/local/bin
 
 RUN chmod +x /usr/local/bin/gosu /usr/local/bin/stolon-keeper /usr/local/bin/stolon-sentinel /usr/local/bin/stolon-proxy /usr/local/bin/stolonctl; \
