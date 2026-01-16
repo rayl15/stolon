@@ -1,0 +1,22 @@
+apiVersion: v2
+name: etcd-ha
+description: Production-ready 3-node HA etcd cluster for Stolon with IPv4/IPv6/Dual-Stack support
+type: application
+version: 1.0.0
+appVersion: "3.5.26"
+keywords:
+  - etcd
+  - distributed
+  - key-value
+  - stolon
+  - postgresql
+  - ha
+  - ipv6
+  - dual-stack
+home: https://etcd.io
+sources:
+  - https://github.com/etcd-io/etcd
+  - https://github.com/sorintlab/stolon
+maintainers:
+  - name: SourceFuse
+    url: https://github.com/sourcefuse

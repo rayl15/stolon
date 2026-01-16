@@ -1,0 +1,47 @@
+{{- if .Values.podDisruptionBudget.keeper.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "stolon.keeper.fullname" . }}
+  namespace: {{ include "stolon.namespace" . }}
+  labels:
+    {{- include "stolon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keeper
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.keeper.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "stolon.keeper.selectorLabels" . | nindent 6 }}
+{{- end }}
+---
+{{- if .Values.podDisruptionBudget.sentinel.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "stolon.sentinel.fullname" . }}
+  namespace: {{ include "stolon.namespace" . }}
+  labels:
+    {{- include "stolon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.sentinel.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "stolon.sentinel.selectorLabels" . | nindent 6 }}
+{{- end }}
+---
+{{- if .Values.podDisruptionBudget.proxy.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "stolon.proxy.fullname" . }}
+  namespace: {{ include "stolon.namespace" . }}
+  labels:
+    {{- include "stolon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.proxy.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "stolon.proxy.selectorLabels" . | nindent 6 }}
+{{- end }}

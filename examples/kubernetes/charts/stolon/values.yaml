@@ -1,0 +1,403 @@
+## Stolon Helm Chart Configuration
+## Production-ready PostgreSQL HA cluster
+
+## Global settings
+clusterName: stolon
+namespace: ""
+createNamespace: false
+
+## Common labels and annotations
+commonLabels: {}
+commonAnnotations: {}
+
+## Image configuration
+image:
+  registry: sourcefuse-stolon.jfrog.io
+  repository: stolon
+  tag: "v0.18.0-pg18-backup"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  # - name: regcred
+
+## Store backend configuration
+store:
+  ## Backend type: etcdv3 or kubernetes
+  backend: etcdv3
+  ## etcd endpoints (for etcdv3 backend)
+  endpoints: "http://etcd-etcd-ha-client:2379"
+  ## Kubernetes resource kind (for kubernetes backend)
+  kubeResourceKind: configmap
+
+## PostgreSQL configuration
+postgresql:
+  ## Superuser credentials
+  superuser: stolon
+  superuserPassword: ""  # Leave empty to use existing secret
+  superuserPasswordSecret: ""  # Use existing secret
+  superuserPasswordKey: pg_su_password
+
+  ## Replication user credentials
+  replicationUser: repluser
+  replicationPassword: ""  # Leave empty to use existing secret
+  replicationPasswordSecret: ""  # Use existing secret
+  replicationPasswordKey: pg_repl_password
+
+  ## Create secrets if passwords are provided
+  createSecrets: true
+
+  ## Custom PostgreSQL parameters (passed to stolonctl init)
+  parameters: {}
+  #  max_connections: "200"
+  #  shared_buffers: "256MB"
+
+  ## Custom pg_hba.conf entries
+  pgHBA: []
+  # - "host all all 0.0.0.0/0 md5"
+
+## Keeper configuration (PostgreSQL instances)
+keeper:
+  replicaCount: 3
+
+  ## Pod labels and annotations
+  podLabels: {}
+  podAnnotations: {}
+  #  custom-annotation: "value"
+
+  ## Service annotations (for Prometheus scraping)
+  serviceAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9187"
+    prometheus.io/path: "/metrics"
+
+  ## Resource requests and limits
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+  ## Persistence configuration
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    annotations: {}
+
+  ## Liveness probe
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+    successThreshold: 1
+
+  ## Readiness probe
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+
+  ## Node selector
+  nodeSelector: {}
+
+  ## Tolerations
+  tolerations: []
+
+  ## Affinity (overrides preset)
+  affinity: {}
+
+  ## Extra environment variables
+  extraEnvVars: []
+  # - name: STKEEPER_DEBUG
+  #   value: "true"
+
+  ## Extra volume mounts
+  extraVolumeMounts: []
+
+  ## Extra volumes
+  extraVolumes: []
+
+  ## Termination grace period
+  terminationGracePeriodSeconds: 30
+
+## Sentinel configuration (cluster management)
+sentinel:
+  replicaCount: 3
+
+  ## Pod labels and annotations
+  podLabels: {}
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+
+  ## Resource requests and limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  ## Liveness probe
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+
+  ## Readiness probe
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+    successThreshold: 1
+
+  ## Node selector
+  nodeSelector: {}
+
+  ## Tolerations
+  tolerations: []
+
+  ## Affinity (overrides preset)
+  affinity: {}
+
+  ## Extra environment variables
+  extraEnvVars: []
+
+## Proxy configuration (connection routing)
+proxy:
+  replicaCount: 3
+
+  ## Pod labels and annotations
+  podLabels: {}
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+
+  ## Resource requests and limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  ## Service configuration
+  service:
+    type: ClusterIP
+    port: 5432
+    annotations: {}
+    # For LoadBalancer type
+    loadBalancerIP: ""
+    loadBalancerSourceRanges: []
+    # For NodePort type
+    nodePort: ""
+
+  ## Liveness probe
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+
+  ## Readiness probe (TCP check on PostgreSQL port)
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+    successThreshold: 1
+
+  ## Node selector
+  nodeSelector: {}
+
+  ## Tolerations
+  tolerations: []
+
+  ## Affinity (overrides preset)
+  affinity: {}
+
+  ## Extra environment variables
+  extraEnvVars: []
+
+## pgBackRest backup configuration
+pgbackrest:
+  enabled: true
+
+  ## Backup stanza name
+  stanza: stolon
+
+  ## Repository configuration
+  repo:
+    ## Repository type: s3, gcs, azure, posix
+    type: s3
+
+    ## S3 configuration
+    s3:
+      endpoint: ""
+      bucket: ""
+      region: "us-east-1"
+      uriStyle: path  # path or host
+
+    ## GCS configuration
+    gcs:
+      bucket: ""
+
+    ## Azure configuration
+    azure:
+      container: ""
+      account: ""
+
+    ## Repository path
+    path: /stolon-backups
+
+  ## Retention policy
+  retention:
+    full: 4
+    diff: 7
+
+  ## Compression settings
+  compression:
+    type: zst
+    level: 3
+
+  ## Parallel processing
+  processMax: 4
+
+  ## Secrets for repository credentials
+  secretName: ""  # Existing secret with credentials
+  ## Or create from values:
+  s3AccessKey: ""
+  s3SecretKey: ""
+  gcsCredentials: ""  # Base64 encoded service account JSON
+
+## Service Account
+serviceAccount:
+  ## Create a new service account
+  create: true
+  ## Name for the service account (auto-generated if empty)
+  name: ""
+  ## Use existing service account (set create: false and specify name)
+  ## existingName: "my-existing-sa"
+  annotations: {}
+
+## RBAC - Role and RoleBinding
+rbac:
+  ## Create Role and RoleBinding
+  create: true
+  ## Use existing Role (set create: false and specify existingRoleName)
+  ## When using existing role, RoleBinding will still be created unless useExistingRoleBinding is true
+  existingRoleName: ""
+  ## Skip RoleBinding creation entirely (use when binding already exists)
+  useExistingRoleBinding: false
+
+## Pod Security Context
+podSecurityContext:
+  fsGroup: 1000
+  runAsUser: 1000
+  runAsNonRoot: true
+
+## Container Security Context
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+## Pod Disruption Budget
+podDisruptionBudget:
+  keeper:
+    enabled: true
+    minAvailable: 2
+  sentinel:
+    enabled: true
+    minAvailable: 2
+  proxy:
+    enabled: true
+    minAvailable: 2
+
+## Anti-affinity presets
+## soft: preferredDuringSchedulingIgnoredDuringExecution
+## hard: requiredDuringSchedulingIgnoredDuringExecution
+podAntiAffinityPreset: soft
+
+## Node anti-affinity for zone spreading
+nodeAntiAffinityPreset:
+  enabled: false
+  topologyKey: topology.kubernetes.io/zone
+
+## Topology spread constraints
+topologySpreadConstraints: []
+
+## Priority class name
+priorityClassName: ""
+
+## Metrics configuration
+metrics:
+  enabled: true
+  port: 9090
+
+  ## Prometheus ServiceMonitor
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    annotations: {}
+
+  ## PostgreSQL Exporter sidecar for keeper pods
+  pgExporter:
+    enabled: true
+    image:
+      registry: sourcefuse-stolon.jfrog.io
+      repository: postgres-exporter
+      tag: "v0.18.1-secure"
+      pullPolicy: IfNotPresent
+    port: 9187
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+    ## Extra flags for postgres_exporter
+    extraFlags: []
+    ## Custom queries file (mounted as ConfigMap)
+    customQueries:
+      enabled: false
+      queries: {}
+
+## Network configuration
+network:
+  ## IP family: IPv4, IPv6, or DualStack
+  ipFamily: IPv4
+  ## IP families order for DualStack
+  ipFamilies:
+    - IPv4
+    - IPv6
+
+## Init containers
+initContainers: []
+
+## Lifecycle hooks
+lifecycle: {}

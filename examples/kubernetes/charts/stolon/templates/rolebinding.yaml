@@ -1,0 +1,21 @@
+{{- if and (or .Values.rbac.create .Values.rbac.existingRoleName) (not .Values.rbac.useExistingRoleBinding) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "stolon.fullname" . }}
+  namespace: {{ include "stolon.namespace" . }}
+  labels:
+    {{- include "stolon.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  {{- if .Values.rbac.existingRoleName }}
+  name: {{ .Values.rbac.existingRoleName }}
+  {{- else }}
+  name: {{ include "stolon.fullname" . }}
+  {{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "stolon.serviceAccountName" . }}
+    namespace: {{ include "stolon.namespace" . }}
+{{- end }}

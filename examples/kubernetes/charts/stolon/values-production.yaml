@@ -1,0 +1,241 @@
+# Production values for Stolon PostgreSQL HA
+# Use with: helm install stolon ./stolon -f values-production.yaml
+
+# Cluster name should be unique per environment
+clusterName: stolon-prod
+
+# Image configuration
+image:
+  registry: sourcefuse-stolon.jfrog.io
+  repository: stolon
+  tag: "2.0.0-pg18"
+  pullPolicy: IfNotPresent
+  pullSecrets:
+    - name: jfrog-registry
+
+# Store backend - etcdv3 recommended for production
+store:
+  backend: etcdv3
+  endpoints: "http://etcd-etcd-ha-client:2379"
+
+# Keeper (PostgreSQL) configuration
+keeper:
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: "gp3"  # AWS EBS gp3 or your preferred storage class
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+    successThreshold: 1
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnvVars: []
+
+# Sentinel configuration
+sentinel:
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnvVars: []
+
+# Proxy configuration
+proxy:
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  service:
+    type: ClusterIP
+    port: 5432
+    annotations: {}
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnvVars: []
+
+# PostgreSQL configuration
+postgresql:
+  superuser: stolon
+  superuserPasswordSecret: stolon-secrets
+  superuserPasswordKey: pg_su_password
+  replicationUser: repluser
+  replicationPasswordSecret: stolon-secrets
+  replicationPasswordKey: pg_repl_password
+  parameters:
+    max_connections: "200"
+    shared_buffers: "1GB"
+    effective_cache_size: "3GB"
+    maintenance_work_mem: "256MB"
+    checkpoint_completion_target: "0.9"
+    wal_buffers: "16MB"
+    default_statistics_target: "100"
+    random_page_cost: "1.1"
+    effective_io_concurrency: "200"
+    min_wal_size: "1GB"
+    max_wal_size: "4GB"
+    max_worker_processes: "4"
+    max_parallel_workers_per_gather: "2"
+    max_parallel_workers: "4"
+    max_parallel_maintenance_workers: "2"
+  pgHBA: []
+
+# pgBackRest backup configuration
+pgbackrest:
+  enabled: true
+  repo:
+    type: s3
+    s3:
+      endpoint: "s3.amazonaws.com"
+      bucket: "your-backup-bucket"
+      region: "us-east-1"
+    path: /stolon-prod-backups
+  retention:
+    full: 4
+    diff: 14
+  compression:
+    type: zst
+    level: 3
+  stanza: stolon-prod
+  secretName: pgbackrest-secrets
+
+# Security context - production hardened
+podSecurityContext:
+  fsGroup: 1000
+  runAsUser: 1000
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Service account
+serviceAccount:
+  create: true
+  name: stolon
+  annotations: {}
+
+# Pod Disruption Budgets - enabled for HA
+podDisruptionBudget:
+  keeper:
+    enabled: true
+    minAvailable: 2
+  sentinel:
+    enabled: true
+    minAvailable: 2
+  proxy:
+    enabled: true
+    minAvailable: 2
+
+# Anti-affinity for spreading pods - HARD for production
+podAntiAffinityPreset: hard
+
+# Zone anti-affinity - spread across availability zones
+nodeAntiAffinityPreset:
+  enabled: true
+  topologyKey: topology.kubernetes.io/zone
+
+# Topology spread constraints for even distribution
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: stolon
+        app.kubernetes.io/component: keeper
+
+# Metrics and monitoring
+metrics:
+  enabled: true
+  port: 9090
+  serviceMonitor:
+    enabled: true
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    labels:
+      release: prometheus
+    annotations: {}
+
+# Network configuration
+network:
+  ipFamily: IPv4
+  ipFamilies:
+    - IPv4
+
+# Common annotations for all resources
+commonAnnotations: {}
+
+# Priority class for critical workloads
+priorityClassName: ""
+
+# Namespace
+createNamespace: false
+namespaceOverride: ""

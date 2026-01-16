@@ -1,0 +1,5 @@
+# IPv6-only cluster configuration
+# Usage: helm install etcd-ha ./etcd-ha -f values-ipv6.yaml
+
+network:
+  ipFamily: "IPv6"

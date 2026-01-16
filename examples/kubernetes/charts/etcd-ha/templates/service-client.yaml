@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "etcd-ha.fullname" . }}-client
+  namespace: {{ include "etcd-ha.namespace" . }}
+  labels:
+    {{- include "etcd-ha.labels" . | nindent 4 }}
+  {{- with .Values.service.client.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.client.type }}
+  {{- if ne .Values.network.ipFamily "IPv4" }}
+  ipFamilyPolicy: {{ include "etcd-ha.ipFamilyPolicy" . }}
+  ipFamilies:
+  {{- include "etcd-ha.ipFamilies" . | nindent 4 }}
+  {{- end }}
+  ports:
+    - name: client
+      port: {{ .Values.network.clientPort }}
+      targetPort: client
+      protocol: TCP
+      {{- if and (eq .Values.service.client.type "NodePort") .Values.service.client.nodePort }}
+      nodePort: {{ .Values.service.client.nodePort }}
+      {{- end }}
+  selector:
+    {{- include "etcd-ha.selectorLabels" . | nindent 4 }}

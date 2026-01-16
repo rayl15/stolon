@@ -1,0 +1,104 @@
+
+███████╗████████╗ ██████╗██████╗       ██╗  ██╗ █████╗
+██╔════╝╚══██╔══╝██╔════╝██╔══██╗      ██║  ██║██╔══██╗
+█████╗     ██║   ██║     ██║  ██║█████╗███████║███████║
+██╔══╝     ██║   ██║     ██║  ██║╚════╝██╔══██║██╔══██║
+███████╗   ██║   ╚██████╗██████╔╝      ██║  ██║██║  ██║
+╚══════╝   ╚═╝    ╚═════╝╚═════╝       ╚═╝  ╚═╝╚═╝  ╚═╝
+
+etcd HA Cluster has been deployed!
+
+=============================================================================
+CLUSTER INFORMATION
+=============================================================================
+
+  Release:     {{ .Release.Name }}
+  Namespace:   {{ include "etcd-ha.namespace" . }}
+  Replicas:    {{ .Values.replicaCount }}
+  IP Family:   {{ .Values.network.ipFamily }}
+  Image:       {{ include "etcd-ha.image" . }}
+
+=============================================================================
+CONNECTION ENDPOINTS
+=============================================================================
+
+1. Internal (within cluster):
+
+   # Client service (load-balanced)
+   http://{{ include "etcd-ha.fullname" . }}-client.{{ include "etcd-ha.namespace" . }}.svc.cluster.local:{{ .Values.network.clientPort }}
+
+   # Direct pod access (headless)
+   http://{{ include "etcd-ha.fullname" . }}-0.{{ include "etcd-ha.fullname" . }}.{{ include "etcd-ha.namespace" . }}.svc.cluster.local:{{ .Values.network.clientPort }}
+
+2. For Stolon configuration:
+
+   stolonctl --store-backend=etcdv3 \
+     --store-endpoints=http://{{ include "etcd-ha.fullname" . }}-client.{{ include "etcd-ha.namespace" . }}.svc.cluster.local:{{ .Values.network.clientPort }} \
+     --cluster-name=kube-stolon \
+     init
+
+=============================================================================
+VERIFY CLUSTER HEALTH
+=============================================================================
+
+# Check pod status
+kubectl -n {{ include "etcd-ha.namespace" . }} get pods -l "app.kubernetes.io/name={{ include "etcd-ha.name" . }}"
+
+# Check cluster health
+kubectl -n {{ include "etcd-ha.namespace" . }} exec {{ include "etcd-ha.fullname" . }}-0 -- \
+  etcdctl endpoint health --cluster
+
+# Check cluster members
+kubectl -n {{ include "etcd-ha.namespace" . }} exec {{ include "etcd-ha.fullname" . }}-0 -- \
+  etcdctl member list -w table
+
+# Check cluster status
+kubectl -n {{ include "etcd-ha.namespace" . }} exec {{ include "etcd-ha.fullname" . }}-0 -- \
+  etcdctl endpoint status --cluster -w table
+
+=============================================================================
+QUICK TEST
+=============================================================================
+
+# Write a key
+kubectl -n {{ include "etcd-ha.namespace" . }} exec {{ include "etcd-ha.fullname" . }}-0 -- \
+  etcdctl put /test/hello "world"
+
+# Read the key
+kubectl -n {{ include "etcd-ha.namespace" . }} exec {{ include "etcd-ha.fullname" . }}-0 -- \
+  etcdctl get /test/hello
+
+{{- if .Values.metrics.enabled }}
+
+=============================================================================
+METRICS
+=============================================================================
+
+Metrics are available at:
+  http://{{ include "etcd-ha.fullname" . }}-client.{{ include "etcd-ha.namespace" . }}.svc.cluster.local:{{ .Values.network.clientPort }}/metrics
+
+{{- if .Values.metrics.serviceMonitor.enabled }}
+ServiceMonitor has been created for Prometheus Operator.
+{{- end }}
+{{- end }}
+
+=============================================================================
+WARNINGS
+=============================================================================
+
+{{- if lt (.Values.replicaCount | int) 3 }}
+⚠️  WARNING: Running with {{ .Values.replicaCount }} replica(s).
+   For production, use at least 3 replicas for high availability.
+{{- end }}
+
+{{- if not .Values.persistence.enabled }}
+⚠️  WARNING: Persistence is disabled. Data will be lost on pod restart.
+   Enable persistence for production use.
+{{- end }}
+
+{{- if not .Values.podDisruptionBudget.enabled }}
+⚠️  WARNING: PodDisruptionBudget is disabled.
+   Enable it for production to prevent accidental quorum loss.
+{{- end }}
+
+For more information, visit: https://etcd.io/docs/

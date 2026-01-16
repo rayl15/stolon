@@ -1,0 +1,20 @@
+# IPv6 and DualStack values for Stolon
+# Use with: helm install stolon ./stolon -f values-ipv6.yaml
+
+# Network configuration for IPv6
+network:
+  # Options: IPv4, IPv6, DualStack
+  ipFamily: DualStack
+  # Order matters - first family is primary
+  ipFamilies:
+    - IPv6
+    - IPv4
+
+# Note: When using DualStack, services will have both IPv4 and IPv6 addresses
+# The first family in ipFamilies will be the primary family
+
+# Example for IPv6-only cluster:
+# network:
+#   ipFamily: IPv6
+#   ipFamilies:
+#     - IPv6

@@ -1,0 +1,25 @@
+apiVersion: v2
+name: stolon
+description: Production-ready PostgreSQL HA cluster using Stolon with etcd backend and pgBackRest backup support
+type: application
+version: 1.0.0
+appVersion: "pg18"
+keywords:
+  - postgresql
+  - postgres
+  - database
+  - ha
+  - high-availability
+  - stolon
+  - replication
+  - failover
+  - backup
+  - pgbackrest
+home: https://github.com/sorintlab/stolon
+sources:
+  - https://github.com/sorintlab/stolon
+maintainers:
+  - name: SourceFuse
+    email: devops@sourcefuse.com
+annotations:
+  category: Database

@@ -1,0 +1,75 @@
+# Production-ready configuration
+# Usage: helm install etcd-ha ./etcd-ha -f values-production.yaml -n etcd --create-namespace
+
+replicaCount: 3
+
+image:
+  pullPolicy: IfNotPresent
+
+# Dual-Stack for maximum compatibility
+network:
+  ipFamily: "DualStack"
+  ipFamilies:
+    - IPv6
+    - IPv4
+
+# Production resource allocation
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+# Large persistent storage
+persistence:
+  enabled: true
+  size: 20Gi
+
+# Ensure quorum protection
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Anti-affinity to spread across nodes
+podAntiAffinityPreset: "hard"
+
+# Spread across availability zones
+nodeAntiAffinityPreset:
+  enabled: true
+  topologyKey: "topology.kubernetes.io/zone"
+
+# Topology spread for even distribution
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: etcd-ha
+
+# etcd tuning for production
+etcd:
+  autoCompactionMode: periodic
+  autoCompactionRetention: "1h"
+  quotaBackendBytes: 8589934592  # 8GB
+  snapshotCount: 10000
+  heartbeatInterval: 100
+  electionTimeout: 1000
+
+# Enable metrics for monitoring
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    scrapeTimeout: 10s
+
+# Priority class for critical workloads
+priorityClassName: "system-cluster-critical"
+
+# Pod annotations for monitoring
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "2379"

@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stolon.sentinel.fullname" . }}
+  namespace: {{ include "stolon.namespace" . }}
+  labels:
+    {{- include "stolon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.sentinel.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "stolon.sentinel.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        {{- include "stolon.sentinel.selectorLabels" . | nindent 8 }}
+        {{- with .Values.sentinel.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.sentinel.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "stolon.serviceAccountName" . }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: sentinel
+          image: {{ include "stolon.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              exec stolon-sentinel
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: STSENTINEL_CLUSTER_NAME
+              value: {{ .Values.clusterName | quote }}
+            - name: STSENTINEL_STORE_BACKEND
+              value: {{ .Values.store.backend | quote }}
+            {{- if eq .Values.store.backend "etcdv3" }}
+            - name: STSENTINEL_STORE_ENDPOINTS
+              value: {{ .Values.store.endpoints | quote }}
+            {{- else if eq .Values.store.backend "kubernetes" }}
+            - name: STSENTINEL_KUBE_RESOURCE_KIND
+              value: {{ .Values.store.kubeResourceKind | quote }}
+            {{- end }}
+            - name: STSENTINEL_METRICS_LISTEN_ADDRESS
+              value: {{ include "stolon.metricsListenAddress" . | quote }}
+            {{- with .Values.sentinel.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.sentinel.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.sentinel.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: {{ .Values.sentinel.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.sentinel.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.sentinel.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.sentinel.livenessProbe.failureThreshold }}
+            successThreshold: {{ .Values.sentinel.livenessProbe.successThreshold }}
+          {{- end }}
+          {{- if .Values.sentinel.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: {{ .Values.sentinel.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.sentinel.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.sentinel.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.sentinel.readinessProbe.failureThreshold }}
+            successThreshold: {{ .Values.sentinel.readinessProbe.successThreshold }}
+          {{- end }}
+      {{- with .Values.sentinel.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.sentinel.affinity .Values.podAntiAffinityPreset .Values.nodeAntiAffinityPreset.enabled }}
+      affinity:
+        {{- with .Values.sentinel.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if or .Values.podAntiAffinityPreset .Values.nodeAntiAffinityPreset.enabled }}
+        podAntiAffinity:
+          {{- include "stolon.sentinel.podAntiAffinity" . | nindent 10 }}
+          {{- include "stolon.nodeAntiAffinity" . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.sentinel.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

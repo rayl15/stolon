@@ -1,0 +1,8 @@
+# Dual-Stack cluster configuration (IPv6 preferred)
+# Usage: helm install etcd-ha ./etcd-ha -f values-dualstack.yaml
+
+network:
+  ipFamily: "DualStack"
+  ipFamilies:
+    - IPv6
+    - IPv4

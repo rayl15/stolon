@@ -1,0 +1,42 @@
+{{- if .Values.pgbackrest.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stolon.fullname" . }}-pgbackrest
+  namespace: {{ include "stolon.namespace" . }}
+  labels:
+    {{- include "stolon.labels" . | nindent 4 }}
+data:
+  pgbackrest.conf: |
+    [global]
+    {{- if eq .Values.pgbackrest.repo.type "s3" }}
+    repo1-type=s3
+    {{- if .Values.pgbackrest.repo.s3.endpoint }}
+    repo1-s3-endpoint={{ .Values.pgbackrest.repo.s3.endpoint }}
+    {{- end }}
+    {{- if .Values.pgbackrest.repo.s3.bucket }}
+    repo1-s3-bucket={{ .Values.pgbackrest.repo.s3.bucket }}
+    {{- end }}
+    repo1-s3-region={{ .Values.pgbackrest.repo.s3.region }}
+    repo1-s3-uri-style={{ .Values.pgbackrest.repo.s3.uriStyle }}
+    {{- else if eq .Values.pgbackrest.repo.type "gcs" }}
+    repo1-type=gcs
+    repo1-gcs-bucket={{ .Values.pgbackrest.repo.gcs.bucket }}
+    {{- else if eq .Values.pgbackrest.repo.type "azure" }}
+    repo1-type=azure
+    repo1-azure-container={{ .Values.pgbackrest.repo.azure.container }}
+    repo1-azure-account={{ .Values.pgbackrest.repo.azure.account }}
+    {{- end }}
+    repo1-path={{ .Values.pgbackrest.repo.path }}
+    repo1-retention-full={{ .Values.pgbackrest.retention.full }}
+    repo1-retention-diff={{ .Values.pgbackrest.retention.diff }}
+    compress-type={{ .Values.pgbackrest.compression.type }}
+    compress-level={{ .Values.pgbackrest.compression.level }}
+    process-max={{ .Values.pgbackrest.processMax }}
+    log-level-console=info
+    log-level-file=debug
+    start-fast=y
+
+    [{{ .Values.pgbackrest.stanza }}]
+    pg1-path=/stolon-data/postgres
+{{- end }}

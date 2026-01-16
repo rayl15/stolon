@@ -1,0 +1,119 @@
+** Stolon PostgreSQL HA Cluster has been deployed! **
+
+Cluster: {{ .Values.clusterName }}
+Namespace: {{ include "stolon.namespace" . }}
+
+Components deployed:
+  - Keepers: {{ .Values.keeper.replicaCount }} replicas (StatefulSet)
+  - Sentinels: {{ .Values.sentinel.replicaCount }} replicas (Deployment)
+  - Proxies: {{ .Values.proxy.replicaCount }} replicas (Deployment)
+
+Store Backend: {{ .Values.store.backend }}
+{{- if eq .Values.store.backend "etcdv3" }}
+Store Endpoints: {{ .Values.store.endpoints }}
+{{- end }}
+
+=== Connecting to PostgreSQL ===
+
+1. Get the PostgreSQL password:
+
+   export PGPASSWORD=$(kubectl get secret -n {{ include "stolon.namespace" . }} \
+     {{ .Values.postgresql.superuserPasswordSecret }} \
+     -o jsonpath="{.data.{{ .Values.postgresql.superuserPasswordKey }}}" | base64 -d)
+
+2. Connect via proxy service:
+
+   # Port-forward the proxy service
+   kubectl port-forward -n {{ include "stolon.namespace" . }} \
+     svc/{{ include "stolon.proxy.serviceName" . }} {{ .Values.proxy.service.port }}:{{ .Values.proxy.service.port }}
+
+   # Connect with psql
+   psql -h localhost -p {{ .Values.proxy.service.port }} -U {{ .Values.postgresql.superuser }} -d postgres
+
+3. Connect from within the cluster:
+
+   Host: {{ include "stolon.proxy.serviceName" . }}.{{ include "stolon.namespace" . }}.svc.cluster.local
+   Port: {{ .Values.proxy.service.port }}
+   User: {{ .Values.postgresql.superuser }}
+   Database: postgres
+
+=== Cluster Management ===
+
+Check cluster status:
+
+   kubectl exec -n {{ include "stolon.namespace" . }} {{ include "stolon.keeper.fullname" . }}-0 -- \
+     stolonctl --cluster-name={{ .Values.clusterName }} \
+       --store-backend={{ .Values.store.backend }} \
+{{- if eq .Values.store.backend "etcdv3" }}
+       --store-endpoints={{ .Values.store.endpoints }} \
+{{- else if eq .Values.store.backend "kubernetes" }}
+       --kube-resource-kind={{ .Values.store.kubeResourceKind }} \
+{{- end }}
+       status
+
+View cluster data:
+
+   kubectl exec -n {{ include "stolon.namespace" . }} {{ include "stolon.keeper.fullname" . }}-0 -- \
+     stolonctl --cluster-name={{ .Values.clusterName }} \
+       --store-backend={{ .Values.store.backend }} \
+{{- if eq .Values.store.backend "etcdv3" }}
+       --store-endpoints={{ .Values.store.endpoints }} \
+{{- else if eq .Values.store.backend "kubernetes" }}
+       --kube-resource-kind={{ .Values.store.kubeResourceKind }} \
+{{- end }}
+       clusterdata read
+
+Manual failover to a specific keeper:
+
+   kubectl exec -n {{ include "stolon.namespace" . }} {{ include "stolon.keeper.fullname" . }}-0 -- \
+     stolonctl --cluster-name={{ .Values.clusterName }} \
+       --store-backend={{ .Values.store.backend }} \
+{{- if eq .Values.store.backend "etcdv3" }}
+       --store-endpoints={{ .Values.store.endpoints }} \
+{{- else if eq .Values.store.backend "kubernetes" }}
+       --kube-resource-kind={{ .Values.store.kubeResourceKind }} \
+{{- end }}
+       failkeeper <keeper-uid>
+
+{{- if .Values.pgbackrest.enabled }}
+
+=== pgBackRest Backup ===
+
+Backup is configured with pgBackRest.
+Stanza: {{ .Values.pgbackrest.stanza }}
+Repository: {{ .Values.pgbackrest.repo.type }}
+
+Create a backup:
+
+   kubectl exec -n {{ include "stolon.namespace" . }} {{ include "stolon.keeper.fullname" . }}-0 -- \
+     pgbackrest --stanza={{ .Values.pgbackrest.stanza }} backup
+
+List backups:
+
+   kubectl exec -n {{ include "stolon.namespace" . }} {{ include "stolon.keeper.fullname" . }}-0 -- \
+     pgbackrest --stanza={{ .Values.pgbackrest.stanza }} info
+
+{{- end }}
+
+{{- if .Values.metrics.enabled }}
+
+=== Monitoring ===
+
+Metrics are exposed on port {{ .Values.metrics.port }} at /metrics endpoint.
+
+{{- if .Values.metrics.serviceMonitor.enabled }}
+ServiceMonitor is enabled for Prometheus Operator.
+{{- else }}
+To enable Prometheus ServiceMonitor, set metrics.serviceMonitor.enabled=true
+{{- end }}
+
+{{- end }}
+
+=== Important Notes ===
+
+- The proxy service is the entry point for all database connections
+- Keepers store data in PersistentVolumeClaims
+- Sentinels handle automatic failover and cluster coordination
+- For production, ensure Pod Disruption Budgets are enabled
+
+For more information, visit: https://github.com/sorintlab/stolon

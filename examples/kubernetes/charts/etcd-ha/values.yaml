@@ -1,0 +1,286 @@
+###############################################################################
+# etcd-ha Helm Chart - Production Configuration
+# Supports: IPv4, IPv6, and Dual-Stack Kubernetes clusters
+###############################################################################
+
+# -- Number of etcd replicas (should be odd: 3, 5, 7)
+replicaCount: 3
+
+# -- Namespace to deploy etcd cluster
+namespace: etcd
+
+# -- Create namespace if it doesn't exist
+createNamespace: true
+
+image:
+  # -- Container registry
+  registry: sourcefuse-stolon.jfrog.io
+  # -- Image repository
+  repository: etcd
+  # -- Image tag (0 CVEs, Go 1.24.11)
+  tag: "v3.5.26"
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Image pull secrets
+  pullSecrets: []
+  # Example:
+  # pullSecrets:
+  #   - name: my-registry-secret
+
+# -- Cluster configuration
+cluster:
+  # -- Cluster name/token for initial bootstrap
+  token: "etcd-cluster-1"
+  # -- Initial cluster state (new or existing)
+  initialClusterState: "new"
+
+# -- Network configuration
+network:
+  # -- IP family configuration: IPv4, IPv6, or DualStack
+  # Options: "IPv4", "IPv6", "DualStack"
+  ipFamily: "IPv4"
+
+  # -- For DualStack: preferred IP family order
+  # Options: ["IPv4", "IPv6"] or ["IPv6", "IPv4"]
+  ipFamilies:
+    - IPv4
+    - IPv6
+
+  # -- Client port
+  clientPort: 2379
+  # -- Peer port
+  peerPort: 2380
+
+# -- Service configuration
+service:
+  # -- Headless service type for peer discovery
+  headless:
+    # -- Additional annotations
+    annotations: {}
+
+  # -- Client service for external access
+  client:
+    # -- Service type (ClusterIP, NodePort, LoadBalancer)
+    type: ClusterIP
+    # -- Additional annotations
+    annotations: {}
+    # -- NodePort (only if type is NodePort)
+    nodePort: null
+
+# -- Resource limits and requests
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# -- Persistence configuration
+persistence:
+  # -- Enable persistent storage
+  enabled: true
+  # -- Storage class (leave empty for default)
+  storageClass: ""
+  # -- Access modes
+  accessModes:
+    - ReadWriteOnce
+  # -- Storage size
+  size: 8Gi
+  # -- Additional annotations for PVC
+  annotations: {}
+
+# -- Pod Disruption Budget
+podDisruptionBudget:
+  # -- Enable PDB
+  enabled: true
+  # -- Minimum available pods (should be majority for quorum)
+  minAvailable: 2
+  # -- Maximum unavailable pods (alternative to minAvailable)
+  # maxUnavailable: 1
+
+# -- Security context for pods
+podSecurityContext:
+  fsGroup: 1000
+  runAsUser: 1000
+  runAsNonRoot: true
+
+# -- Security context for containers
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+# -- Liveness probe configuration
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+  successThreshold: 1
+
+# -- Readiness probe configuration
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+# -- Startup probe configuration (useful for slow storage)
+startupProbe:
+  enabled: false
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+  successThreshold: 1
+
+# -- etcd configuration parameters
+etcd:
+  # -- Auto compaction mode (periodic or revision)
+  autoCompactionMode: periodic
+  # -- Auto compaction retention
+  autoCompactionRetention: "1h"
+  # -- Quota backend bytes (default 2GB)
+  quotaBackendBytes: 2147483648
+  # -- Snapshot count
+  snapshotCount: 10000
+  # -- Heartbeat interval in milliseconds
+  heartbeatInterval: 100
+  # -- Election timeout in milliseconds
+  electionTimeout: 1000
+  # -- Max request bytes
+  maxRequestBytes: 1572864
+  # -- Enable gRPC gateway
+  enableGrpcGateway: true
+  # -- Enable v2 API (deprecated, disabled by default)
+  enableV2: false
+  # -- Extra environment variables
+  extraEnvVars: []
+  # Example:
+  # extraEnvVars:
+  #   - name: ETCD_DEBUG
+  #     value: "true"
+
+# -- TLS configuration
+tls:
+  # -- Enable TLS for client connections
+  enabled: false
+  # -- Enable TLS for peer connections
+  peerEnabled: false
+  # -- Existing secret name containing TLS certificates
+  # Secret should contain: ca.crt, tls.crt, tls.key
+  existingSecret: ""
+  # -- Auto-generate self-signed certificates (for testing only)
+  autoGenerate: false
+  # -- Certificate validity in days (if autoGenerate is true)
+  certValidityDays: 365
+
+# -- Authentication configuration
+auth:
+  # -- Enable RBAC authentication
+  rbac:
+    enabled: false
+  # -- Root password (required if RBAC enabled)
+  rootPassword: ""
+  # -- Existing secret with root password
+  existingSecret: ""
+
+# -- Node selector
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity rules
+affinity: {}
+# Example for anti-affinity (recommended for production):
+# affinity:
+#   podAntiAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       - labelSelector:
+#           matchLabels:
+#             app.kubernetes.io/name: etcd-ha
+#         topologyKey: kubernetes.io/hostname
+
+# -- Pod anti-affinity preset
+# Options: soft, hard, or empty to disable
+podAntiAffinityPreset: "soft"
+
+# -- Node anti-affinity preset
+# Options: soft, hard, or empty to disable
+nodeAntiAffinityPreset:
+  enabled: false
+  topologyKey: "topology.kubernetes.io/zone"
+
+# -- Extra labels to add to all resources
+commonLabels: {}
+
+# -- Extra annotations to add to all resources
+commonAnnotations: {}
+
+# -- Pod labels
+podLabels: {}
+
+# -- Pod annotations
+podAnnotations: {}
+
+# -- Priority class name
+priorityClassName: ""
+
+# -- Topology spread constraints
+topologySpreadConstraints: []
+# Example:
+# topologySpreadConstraints:
+#   - maxSkew: 1
+#     topologyKey: topology.kubernetes.io/zone
+#     whenUnsatisfiable: ScheduleAnyway
+#     labelSelector:
+#       matchLabels:
+#         app.kubernetes.io/name: etcd-ha
+
+# -- Service account configuration
+serviceAccount:
+  # -- Create service account
+  create: true
+  # -- Service account name
+  name: ""
+  # -- Annotations for service account
+  annotations: {}
+
+# -- Metrics configuration
+metrics:
+  # -- Enable metrics endpoint
+  enabled: true
+  # -- Metrics port
+  port: 2379
+  # -- ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    annotations: {}
+
+# -- Init containers
+initContainers: []
+
+# -- Extra volumes
+extraVolumes: []
+
+# -- Extra volume mounts
+extraVolumeMounts: []
+
+# -- Lifecycle hooks
+lifecycle: {}
+# Example:
+# lifecycle:
+#   preStop:
+#     exec:
+#       command: ["/bin/sh", "-c", "sleep 10"]

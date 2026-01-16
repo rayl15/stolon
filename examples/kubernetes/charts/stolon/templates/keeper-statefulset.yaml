@@ -1,0 +1,308 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "stolon.keeper.fullname" . }}
+  namespace: {{ include "stolon.namespace" . }}
+  labels:
+    {{- include "stolon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keeper
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  serviceName: {{ include "stolon.keeper.fullname" . }}
+  replicas: {{ .Values.keeper.replicaCount }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "stolon.keeper.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "stolon.keeper.selectorLabels" . | nindent 8 }}
+        {{- with .Values.keeper.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.keeper.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "stolon.serviceAccountName" . }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Fix data directory permissions for PostgreSQL
+        - name: fix-permissions
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Ensure data directory exists and has correct permissions
+              mkdir -p /stolon-data/postgres
+              # PostgreSQL requires 0700 or 0750 permissions
+              chmod 700 /stolon-data
+              chmod 700 /stolon-data/postgres 2>/dev/null || true
+              # Fix ownership if needed
+              chown -R 1000:1000 /stolon-data 2>/dev/null || true
+              echo "Permissions fixed successfully"
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          volumeMounts:
+            - name: data
+              mountPath: /stolon-data
+        {{- with .Values.initContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.keeper.terminationGracePeriodSeconds }}
+      containers:
+        - name: keeper
+          image: {{ include "stolon.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              # Generate keeper UID from pod index
+              IFS='-' read -ra ADDR <<< "$(hostname)"
+              export STKEEPER_UID="keeper${ADDR[-1]}"
+              export POD_IP=$(hostname -i)
+              export STKEEPER_PG_LISTEN_ADDRESS=$POD_IP
+              export STKEEPER_PG_ADVERTISE_ADDRESS=$POD_IP
+              export STOLON_DATA=/stolon-data
+              exec stolon-keeper --data-dir $STOLON_DATA
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: STKEEPER_CLUSTER_NAME
+              value: {{ .Values.clusterName | quote }}
+            - name: STKEEPER_STORE_BACKEND
+              value: {{ .Values.store.backend | quote }}
+            {{- if eq .Values.store.backend "etcdv3" }}
+            - name: STKEEPER_STORE_ENDPOINTS
+              value: {{ .Values.store.endpoints | quote }}
+            {{- else if eq .Values.store.backend "kubernetes" }}
+            - name: STKEEPER_KUBE_RESOURCE_KIND
+              value: {{ .Values.store.kubeResourceKind | quote }}
+            {{- end }}
+            - name: STKEEPER_PG_REPL_USERNAME
+              value: {{ .Values.postgresql.replicationUser | quote }}
+            {{- if .Values.postgresql.replicationPasswordSecret }}
+            - name: STKEEPER_PG_REPL_PASSWORDFILE
+              value: /etc/secrets/stolon/{{ .Values.postgresql.replicationPasswordKey }}
+            {{- else }}
+            - name: STKEEPER_PG_REPL_PASSWORDFILE
+              value: /etc/secrets/stolon/{{ .Values.postgresql.replicationPasswordKey }}
+            {{- end }}
+            - name: STKEEPER_PG_SU_USERNAME
+              value: {{ .Values.postgresql.superuser | quote }}
+            - name: STKEEPER_PG_SU_PASSWORDFILE
+              value: /etc/secrets/stolon/{{ .Values.postgresql.superuserPasswordKey }}
+            - name: STKEEPER_METRICS_LISTEN_ADDRESS
+              value: {{ include "stolon.metricsListenAddress" . | quote }}
+            {{- if .Values.pgbackrest.enabled }}
+            - name: PGBACKREST_STANZA
+              value: {{ .Values.pgbackrest.stanza | quote }}
+            - name: PGBACKREST_CONFIG
+              value: /etc/pgbackrest/pgbackrest.conf
+            {{- if eq .Values.pgbackrest.repo.type "s3" }}
+            - name: PGBACKREST_REPO1_S3_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "stolon.pgbackrest.secretName" . }}
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: PGBACKREST_REPO1_S3_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "stolon.pgbackrest.secretName" . }}
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            {{- end }}
+            {{- end }}
+            {{- with .Values.keeper.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.keeper.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.keeper.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: {{ .Values.keeper.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.keeper.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.keeper.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.keeper.livenessProbe.failureThreshold }}
+            successThreshold: {{ .Values.keeper.livenessProbe.successThreshold }}
+          {{- end }}
+          {{- if .Values.keeper.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: {{ .Values.keeper.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.keeper.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.keeper.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.keeper.readinessProbe.failureThreshold }}
+            successThreshold: {{ .Values.keeper.readinessProbe.successThreshold }}
+          {{- end }}
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /stolon-data
+            - name: secrets
+              mountPath: /etc/secrets/stolon
+              readOnly: true
+            {{- if .Values.pgbackrest.enabled }}
+            - name: pgbackrest-config
+              mountPath: /etc/pgbackrest
+              readOnly: true
+            {{- end }}
+            {{- with .Values.keeper.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- if .Values.metrics.pgExporter.enabled }}
+        - name: postgres-exporter
+          image: {{ include "stolon.pgExporter.image" . }}
+          imagePullPolicy: {{ .Values.metrics.pgExporter.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: pg-exporter
+              containerPort: {{ .Values.metrics.pgExporter.port }}
+              protocol: TCP
+          args:
+            - --web.listen-address=:{{ .Values.metrics.pgExporter.port }}
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: DATA_SOURCE_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "stolon.secretName" . }}
+                  key: {{ .Values.postgresql.superuserPasswordKey }}
+            - name: DATA_SOURCE_USER
+              value: {{ .Values.postgresql.superuser | quote }}
+            - name: DATA_SOURCE_NAME
+              value: "postgresql://$(DATA_SOURCE_USER):$(DATA_SOURCE_PASS)@$(POD_IP):5432/postgres?sslmode=disable"
+            {{- with .Values.metrics.pgExporter.extraFlags }}
+            - name: PG_EXPORTER_EXTRA_FLAGS
+              value: {{ join " " . | quote }}
+            {{- end }}
+          {{- with .Values.metrics.pgExporter.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: pg-exporter
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: pg-exporter
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+        {{- end }}
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ include "stolon.secretName" . }}
+            defaultMode: 0400
+        {{- if .Values.pgbackrest.enabled }}
+        - name: pgbackrest-config
+          configMap:
+            name: {{ include "stolon.fullname" . }}-pgbackrest
+        {{- end }}
+        {{- with .Values.keeper.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.keeper.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.keeper.affinity .Values.podAntiAffinityPreset .Values.nodeAntiAffinityPreset.enabled }}
+      affinity:
+        {{- with .Values.keeper.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if or .Values.podAntiAffinityPreset .Values.nodeAntiAffinityPreset.enabled }}
+        podAntiAffinity:
+          {{- include "stolon.keeper.podAntiAffinity" . | nindent 10 }}
+          {{- include "stolon.nodeAntiAffinity" . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.keeper.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.keeper.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        {{- with .Values.keeper.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.keeper.persistence.accessModes | nindent 10 }}
+        {{- if .Values.keeper.persistence.storageClass }}
+        storageClassName: {{ .Values.keeper.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.keeper.persistence.size }}
+  {{- end }}

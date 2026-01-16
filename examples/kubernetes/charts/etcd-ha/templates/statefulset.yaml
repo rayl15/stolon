@@ -1,0 +1,205 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "etcd-ha.fullname" . }}
+  namespace: {{ include "etcd-ha.namespace" . }}
+  labels:
+    {{- include "etcd-ha.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  serviceName: {{ include "etcd-ha.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "etcd-ha.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "etcd-ha.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "etcd-ha.serviceAccountName" . }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: etcd
+          image: {{ include "etcd-ha.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: client
+              containerPort: {{ .Values.network.clientPort }}
+              protocol: TCP
+            - name: peer
+              containerPort: {{ .Values.network.peerPort }}
+              protocol: TCP
+          env:
+            - name: ETCD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: ETCD_DATA_DIR
+              value: /var/lib/etcd
+            - name: ETCD_INITIAL_CLUSTER_STATE
+              value: {{ .Values.cluster.initialClusterState | quote }}
+            - name: ETCD_INITIAL_CLUSTER_TOKEN
+              value: {{ .Values.cluster.token | quote }}
+            - name: ETCD_INITIAL_CLUSTER
+              value: {{ include "etcd-ha.initialCluster" . | quote }}
+            # Listen on all interfaces (IPv4 and IPv6)
+            - name: ETCD_LISTEN_PEER_URLS
+              value: "http://{{ include "etcd-ha.listenAddress" . }}:{{ .Values.network.peerPort }}"
+            - name: ETCD_LISTEN_CLIENT_URLS
+              value: "http://{{ include "etcd-ha.listenAddress" . }}:{{ .Values.network.clientPort }}"
+            - name: ETCD_ADVERTISE_CLIENT_URLS
+              value: "http://$(ETCD_NAME).{{ include "etcd-ha.fullname" . }}.{{ include "etcd-ha.namespace" . }}.svc.cluster.local:{{ .Values.network.clientPort }}"
+            - name: ETCD_INITIAL_ADVERTISE_PEER_URLS
+              value: "http://$(ETCD_NAME).{{ include "etcd-ha.fullname" . }}.{{ include "etcd-ha.namespace" . }}.svc.cluster.local:{{ .Values.network.peerPort }}"
+            # etcd configuration
+            - name: ETCD_AUTO_COMPACTION_MODE
+              value: {{ .Values.etcd.autoCompactionMode | quote }}
+            - name: ETCD_AUTO_COMPACTION_RETENTION
+              value: {{ .Values.etcd.autoCompactionRetention | quote }}
+            - name: ETCD_QUOTA_BACKEND_BYTES
+              value: {{ .Values.etcd.quotaBackendBytes | int64 | quote }}
+            - name: ETCD_SNAPSHOT_COUNT
+              value: {{ .Values.etcd.snapshotCount | quote }}
+            - name: ETCD_HEARTBEAT_INTERVAL
+              value: {{ .Values.etcd.heartbeatInterval | quote }}
+            - name: ETCD_ELECTION_TIMEOUT
+              value: {{ .Values.etcd.electionTimeout | quote }}
+            - name: ETCD_MAX_REQUEST_BYTES
+              value: {{ .Values.etcd.maxRequestBytes | int64 | quote }}
+            - name: ETCD_ENABLE_GRPC_GATEWAY
+              value: {{ .Values.etcd.enableGrpcGateway | quote }}
+            {{- if .Values.etcd.enableV2 }}
+            - name: ETCD_ENABLE_V2
+              value: "true"
+            {{- end }}
+            {{- with .Values.etcd.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: client
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: client
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+          {{- end }}
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: client
+            initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.startupProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+            successThreshold: {{ .Values.startupProbe.successThreshold }}
+          {{- end }}
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/etcd
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      {{- with .Values.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.affinity .Values.podAntiAffinityPreset .Values.nodeAntiAffinityPreset.enabled }}
+      affinity:
+        {{- with .Values.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if or .Values.podAntiAffinityPreset .Values.nodeAntiAffinityPreset.enabled }}
+        podAntiAffinity:
+          {{- include "etcd-ha.podAntiAffinity" . | nindent 10 }}
+          {{- include "etcd-ha.nodeAntiAffinity" . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        {{- with .Values.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

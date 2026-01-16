@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stolon.proxy.fullname" . }}
+  namespace: {{ include "stolon.namespace" . }}
+  labels:
+    {{- include "stolon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.proxy.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "stolon.proxy.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        {{- include "stolon.proxy.selectorLabels" . | nindent 8 }}
+        {{- with .Values.proxy.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.proxy.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "stolon.serviceAccountName" . }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: proxy
+          image: {{ include "stolon.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              exec stolon-proxy
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: STPROXY_CLUSTER_NAME
+              value: {{ .Values.clusterName | quote }}
+            - name: STPROXY_STORE_BACKEND
+              value: {{ .Values.store.backend | quote }}
+            {{- if eq .Values.store.backend "etcdv3" }}
+            - name: STPROXY_STORE_ENDPOINTS
+              value: {{ .Values.store.endpoints | quote }}
+            {{- else if eq .Values.store.backend "kubernetes" }}
+            - name: STPROXY_KUBE_RESOURCE_KIND
+              value: {{ .Values.store.kubeResourceKind | quote }}
+            {{- end }}
+            - name: STPROXY_LISTEN_ADDRESS
+              value: {{ include "stolon.bindAddress" . | quote }}
+            - name: STPROXY_METRICS_LISTEN_ADDRESS
+              value: {{ include "stolon.metricsListenAddress" . | quote }}
+            {{- with .Values.proxy.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.proxy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.proxy.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: {{ .Values.proxy.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.proxy.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.proxy.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.proxy.livenessProbe.failureThreshold }}
+            successThreshold: {{ .Values.proxy.livenessProbe.successThreshold }}
+          {{- end }}
+          {{- if .Values.proxy.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: postgresql
+            initialDelaySeconds: {{ .Values.proxy.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.proxy.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.proxy.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.proxy.readinessProbe.failureThreshold }}
+            successThreshold: {{ .Values.proxy.readinessProbe.successThreshold }}
+          {{- end }}
+      {{- with .Values.proxy.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.proxy.affinity .Values.podAntiAffinityPreset .Values.nodeAntiAffinityPreset.enabled }}
+      affinity:
+        {{- with .Values.proxy.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if or .Values.podAntiAffinityPreset .Values.nodeAntiAffinityPreset.enabled }}
+        podAntiAffinity:
+          {{- include "stolon.proxy.podAntiAffinity" . | nindent 10 }}
+          {{- include "stolon.nodeAntiAffinity" . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.proxy.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
