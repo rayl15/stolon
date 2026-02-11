@@ -1,5 +1,6 @@
 # Build postgres_exporter with latest Go to eliminate vulnerabilities
-FROM golang:1.24.11-alpine AS builder
+# Fixed CVE-2025-61732 (Go cgo code smuggling)
+FROM golang:1.24.13-alpine AS builder
 
 ARG POSTGRES_EXPORTER_VERSION=v0.18.1
 

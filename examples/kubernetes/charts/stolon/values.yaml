@@ -14,7 +14,8 @@ commonAnnotations: {}
 image:
   registry: sourcefuse-stolon.jfrog.io
   repository: stolon
-  tag: "v0.18.0-pg18-backup"
+  # Go 1.24.13 fixes CVE-2025-61732; apt-get upgrade fixes OpenSSL CVEs
+  tag: "v0.18.0-pg18-backup-r2"
   pullPolicy: IfNotPresent
   pullSecrets: []
   # - name: regcred
@@ -370,7 +371,8 @@ metrics:
     image:
       registry: sourcefuse-stolon.jfrog.io
       repository: postgres-exporter
-      tag: "v0.18.1-secure"
+      # Go 1.24.13 fixes CVE-2025-61732
+      tag: "v0.18.1-go1.24.13"
       pullPolicy: IfNotPresent
     port: 9187
     resources:

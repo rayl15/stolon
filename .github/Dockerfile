@@ -4,7 +4,7 @@ ARG GOSU_VERSION=1.17
 #######
 ####### Build the stolon binaries
 #######
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.24.13-bookworm AS builder
 
 WORKDIR /stolon
 
@@ -16,7 +16,7 @@ RUN make
 #######
 ####### Build gosu from source with latest Go (fixes CVE-2025-58183, CVE-2025-61729)
 #######
-FROM golang:1.24-bookworm AS gosu-builder
+FROM golang:1.24.13-bookworm AS gosu-builder
 
 ARG GOSU_VERSION
 
@@ -29,12 +29,14 @@ RUN set -eux; \
 #######
 FROM postgres:${PGVERSION}
 
+# Security: Apply latest security patches (CVE-2025-15467, CVE-2025-69419-21)
 # Install pgBackRest for 500GB+ incremental backups
 # - Incremental/differential backups (only changed blocks)
 # - Parallel backup and restore
 # - Native S3/GCS/Azure support
 # - Point-in-time recovery (PITR)
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends pgbackrest && \
     rm -rf /var/lib/apt/lists/*
 
