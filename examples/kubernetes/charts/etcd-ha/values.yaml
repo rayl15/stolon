@@ -17,8 +17,8 @@ image:
   registry: sourcefuse-stolon.jfrog.io
   # -- Image repository
   repository: etcd
-  # -- Image tag (0 CVEs, Go 1.24.13 - fixes CVE-2025-61732)
-  tag: "v3.5.21-go1.24.13"
+  # -- Image tag (0 CVEs, Go 1.24.13, x/crypto 0.43.0, OpenSSL 3.3.6)
+  tag: "v3.5.21-go1.24.13-r2"
   # -- Image pull policy
   pullPolicy: IfNotPresent
   # -- Image pull secrets
